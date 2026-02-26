@@ -43,9 +43,10 @@ describe.skipIf(!hasTestFile).concurrent('File reader', () => {
   fileReaderTest('worldTiles', async ({ reader }) => {
     const parsed = reader.parse({ sections: ['worldTiles'] })
     expect(Object.keys(parsed).length).toEqual(1)
-    expect(parsed.worldTiles.tiles.length).toEqual(8400)
-    expect(parsed.worldTiles.tiles[0].length).toEqual(2400)
-    expect(parsed.worldTiles.tiles[2166][751]).toEqual({
+    const tiles = parsed.worldTiles.tiles
+    expect(tiles.width).toEqual(8400)
+    expect(tiles.height).toEqual(2400)
+    expect(tiles.getTile(2166, 751)).toEqual({
       blockId: 231,
       frameX: 18,
       frameY: 18,
@@ -53,23 +54,23 @@ describe.skipIf(!hasTestFile).concurrent('File reader', () => {
       liquidType: 3,
       wallId: 86,
     })
-    expect(parsed.worldTiles.tiles[1037][488]).toEqual({
+    expect(tiles.getTile(1037, 488)).toEqual({
       blockId: 2,
       slope: Slope.TL,
     })
-    expect(parsed.worldTiles.tiles[550][1150]).toEqual({
+    expect(tiles.getTile(550, 1150)).toEqual({
       liquidAmount: 255,
       liquidType: Liquid.Shimmer,
     })
-    expect(parsed.worldTiles.tiles[4167][530]).toEqual({
+    expect(tiles.getTile(4167, 530)).toEqual({
       blockId: 52,
       liquidAmount: 255,
       liquidType: Liquid.Water,
       wallId: 2,
     })
     // RLE oftentimes drifts in corrupted parses
-    expect(parsed.worldTiles.tiles[8398][0]).toEqual({})
-    expect(parsed.worldTiles.tiles[8398][2398]).toEqual({ blockId: 57 })
+    expect(tiles.getTile(8398, 0)).toEqual({})
+    expect(tiles.getTile(8398, 2398)).toEqual({ blockId: 57 })
   })
 
   fileReaderTest('chests', async ({ reader }) => {

@@ -2,10 +2,11 @@ import type { WorldProperties } from '../FileReader'
 import type BinaryReader from '../BinaryReader'
 import type BinarySaver from '../BinarySaver'
 import type { Section } from '../sections'
-import { Liquid, Slope, Tile } from '../types'
+import { Liquid, TileFlag } from '../types'
+import { TileData } from '../TileData'
 
 export class WorldTilesData {
-  public tiles!: Tile[][]
+  public tiles!: TileData
 }
 
 const enum FLAG_1 {
@@ -68,17 +69,17 @@ export default class WorldTilesIO implements Section.IODefinition<WorldTilesData
     const data = new WorldTilesData()
     this.RLE = 0
 
-    data.tiles = new Array(world.width)
+    const tiles = new TileData(world.width, world.height)
+    data.tiles = tiles
 
     for (let x = 0; x < world.width; x++) {
-      data.tiles[x] = new Array(world.height)
-
       for (let y = 0; y < world.height; y++) {
-        data.tiles[x][y] = this.parseTileData(reader, world)
+        const i = x * world.height + y
+        this.parseTileData(reader, world, tiles, i)
 
         while (this.RLE) {
-          data.tiles[x][y + 1] = data.tiles[x][y]
           y++
+          tiles.copyTile(i, x * world.height + y)
           this.RLE--
         }
       }
@@ -88,22 +89,28 @@ export default class WorldTilesIO implements Section.IODefinition<WorldTilesData
   }
 
   public save(saver: BinarySaver, data: WorldTilesData, world: WorldProperties): void {
+    const tiles = data.tiles
     const worldTilesCount = world.width * world.height
 
     for (let x = 0; x < world.width; x++) {
       for (let y = 0; y < world.height; ) {
-        const tile = data.tiles[x][y]
+        const i = x * world.height + y
         this.RLE = 0
 
-        while (JSON.stringify(tile) === JSON.stringify(data.tiles[x][++y]) && y < world.height) {
-          if (world.version >= 232 && (tile.blockId == 520 || tile.blockId == 423)) {
-            break
+        let nextY = y + 1
+        while (nextY < world.height && tiles.tilesEqual(i, x * world.height + nextY)) {
+          if (world.version >= 232) {
+            const blockId = tiles.blockId[i]
+            if (blockId == 520 || blockId == 423) {
+              break
+            }
           }
-
           this.RLE++
+          nextY++
         }
 
-        this.saveTileData(saver, world, tile)
+        this.saveTileData(saver, world, tiles, i)
+        y = nextY
 
         if (
           saver.progressCallback &&
@@ -116,8 +123,8 @@ export default class WorldTilesIO implements Section.IODefinition<WorldTilesData
     }
   }
 
-  private parseTileData(reader: BinaryReader, world: WorldProperties): Tile {
-    let tile: Tile = {}
+  private parseTileData(reader: BinaryReader, world: WorldProperties, tiles: TileData, i: number): void {
+    let tileFlags = 0
 
     const flags1 = reader.readUInt8()
     let flags2 = 0,
@@ -138,105 +145,81 @@ export default class WorldTilesIO implements Section.IODefinition<WorldTilesData
 
     if (flags1 & FLAG_1.IS_NOT_EMPTY) {
       if (flags1 & FLAG_1.BLOCK_ID_1) {
+        tileFlags |= TileFlag.IS_BLOCK_ACTIVE
+
         if (flags1 & FLAG_1.BLOCK_ID_2) {
-          tile.blockId = reader.readUInt16()
+          tiles.blockId[i] = reader.readUInt16()
         } else {
-          tile.blockId = reader.readUInt8()
+          tiles.blockId[i] = reader.readUInt8()
         }
 
-        if (world.importants[tile.blockId]) {
-          tile.frameX = reader.readInt16()
-          tile.frameY = reader.readInt16()
-          if (tile.blockId == 144) {
-            tile.frameY = 0
+        if (world.importants[tiles.blockId[i]]) {
+          tiles.frameX[i] = reader.readInt16()
+          tiles.frameY[i] = reader.readInt16()
+          if (tiles.blockId[i] == 144) {
+            tiles.frameY[i] = 0
           }
         }
 
         if (flags3 & FLAG_3.BLOCK_COLOR_ID) {
-          tile.blockColor = reader.readUInt8()
+          tiles.blockColor[i] = reader.readUInt8()
         }
       }
 
       if (flags1 & FLAG_1.WALL_ID_1) {
-        tile.wallId = reader.readUInt8()
+        tiles.wallId[i] = reader.readUInt8()
 
         if (flags3 & FLAG_3.WALL_COLOR_ID) {
-          tile.wallColor = reader.readUInt8()
+          tiles.wallColor[i] = reader.readUInt8()
         }
       }
 
       const liquidType = (flags1 & FLAG_1.LIQUID_ID) >> FLAG_1.LIQUID_ID_OFFSET
       if (liquidType) {
-        tile.liquidAmount = reader.readUInt8()
+        tiles.liquidAmount[i] = reader.readUInt8()
 
         if (flags3 & FLAG_3.IS_SHIMMER_LIQUID) {
-          tile.liquidType = Liquid.Shimmer
+          tiles.liquidType[i] = Liquid.Shimmer
         } else {
-          tile.liquidType = liquidType as Liquid
+          tiles.liquidType[i] = liquidType
         }
       }
     }
 
     if (flags2) {
       if (flags2 & FLAG_2.IS_NOT_EMPTY) {
-        if (flags2 & FLAG_2.IS_RED_WIRE) {
-          tile.wireRed = true
-        }
-
-        if (flags2 & FLAG_2.IS_BLUE_WIRE) {
-          tile.wireBlue = true
-        }
-
-        if (flags2 & FLAG_2.IS_GREEN_WIRE) {
-          tile.wireGreen = true
-        }
+        if (flags2 & FLAG_2.IS_RED_WIRE) tileFlags |= TileFlag.WIRE_RED
+        if (flags2 & FLAG_2.IS_BLUE_WIRE) tileFlags |= TileFlag.WIRE_BLUE
+        if (flags2 & FLAG_2.IS_GREEN_WIRE) tileFlags |= TileFlag.WIRE_GREEN
 
         const slope = (flags2 & FLAG_2.SLOPE_ID) >> FLAG_2.SLOPE_ID_OFFSET
         if (slope) {
-          tile.slope = slope as Slope
+          tileFlags |= (slope << TileFlag.SLOPE_SHIFT)
         }
       }
 
       if (flags3) {
         if (flags3 & FLAG_3.IS_NOT_EMPTY) {
-          if (flags3 & FLAG_3.IS_ACTUATOR) {
-            tile.actuator = true
-          }
-
-          if (flags3 & FLAG_3.IS_ACTUATED) {
-            tile.actuated = true
-          }
-
-          if (flags3 & FLAG_3.IS_YELLOW_WIRE) {
-            tile.wireYellow = true
-          }
+          if (flags3 & FLAG_3.IS_ACTUATOR) tileFlags |= TileFlag.ACTUATOR
+          if (flags3 & FLAG_3.IS_ACTUATED) tileFlags |= TileFlag.ACTUATED
+          if (flags3 & FLAG_3.IS_YELLOW_WIRE) tileFlags |= TileFlag.WIRE_YELLOW
 
           if (flags3 & FLAG_3.WALL_ID_2) {
-            // we don't have more than 512 wall ids
             reader.skipBytes(1)
-            tile.wallId = 256 + tile.wallId!
+            tiles.wallId[i] = 256 + tiles.wallId[i]
           }
         }
 
         if (flags4) {
-          if (flags4 & FLAG_4.IS_INVISIBLE_BLOCK) {
-            tile.invisibleBlock = true
-          }
-
-          if (flags4 & FLAG_4.IS_INVISIBLE_WALL) {
-            tile.invisibleWall = true
-          }
-
-          if (flags4 & FLAG_4.IS_FULL_BRIGHT_BLOCK) {
-            tile.fullBrightBlock = true
-          }
-
-          if (flags4 & FLAG_4.IS_FULL_BRIGHT_WALL) {
-            tile.fullBrightWall = true
-          }
+          if (flags4 & FLAG_4.IS_INVISIBLE_BLOCK) tileFlags |= TileFlag.INVISIBLE_BLOCK
+          if (flags4 & FLAG_4.IS_INVISIBLE_WALL) tileFlags |= TileFlag.INVISIBLE_WALL
+          if (flags4 & FLAG_4.IS_FULL_BRIGHT_BLOCK) tileFlags |= TileFlag.FULL_BRIGHT_BLOCK
+          if (flags4 & FLAG_4.IS_FULL_BRIGHT_WALL) tileFlags |= TileFlag.FULL_BRIGHT_WALL
         }
       }
     }
+
+    tiles.flags[i] = tileFlags
 
     switch (flags1 & FLAG_1.RLE) {
       case FLAG_1.RLE_1:
@@ -246,11 +229,19 @@ export default class WorldTilesIO implements Section.IODefinition<WorldTilesData
         this.RLE = reader.readInt16()
         break
     }
-
-    return tile
   }
 
-  private saveTileData(saver: BinarySaver, world: WorldProperties, tile: Tile): void {
+  private saveTileData(saver: BinarySaver, world: WorldProperties, tiles: TileData, i: number): void {
+    const tileFlags = tiles.flags[i]
+    const hasBlock = tileFlags & TileFlag.IS_BLOCK_ACTIVE
+    const blockId = tiles.blockId[i]
+    const wallId = tiles.wallId[i]
+    const liquidAmount = tiles.liquidAmount[i]
+    const liquidType = tiles.liquidType[i]
+    const blockColor = tiles.blockColor[i]
+    const wallColor = tiles.wallColor[i]
+    const slope = (tileFlags & TileFlag.SLOPE_MASK) >> TileFlag.SLOPE_SHIFT
+
     let flags1 = 0,
       flags2 = 0,
       flags3 = 0,
@@ -260,47 +251,47 @@ export default class WorldTilesIO implements Section.IODefinition<WorldTilesData
       flags1 |= this.RLE > 255 ? FLAG_1.RLE_2 : FLAG_1.RLE_1
     }
 
-    if (tile.blockId! >= 0) {
+    if (hasBlock) {
       flags1 |= FLAG_1.BLOCK_ID_1
 
-      if (tile.blockId! > 255) {
+      if (blockId > 255) {
         flags1 |= FLAG_1.BLOCK_ID_2
       }
     }
 
-    if (tile.wallId) {
+    if (wallId) {
       flags1 |= FLAG_1.WALL_ID_1
 
-      if (tile.wallId > 255) {
+      if (wallId > 255) {
         flags3 |= FLAG_3.WALL_ID_2
       }
     }
 
-    if (tile.liquidAmount) {
-      if (tile.liquidType == 4) {
+    if (liquidAmount) {
+      if (liquidType == 4) {
         flags1 |= FLAG_1.IS_WATER
         flags3 |= FLAG_3.IS_SHIMMER_LIQUID
       } else {
-        flags1 |= tile.liquidType! << FLAG_1.LIQUID_ID_OFFSET
+        flags1 |= liquidType << FLAG_1.LIQUID_ID_OFFSET
       }
     }
 
-    if (tile.slope) {
-      flags2 |= tile.slope << FLAG_2.SLOPE_ID_OFFSET
+    if (slope) {
+      flags2 |= slope << FLAG_2.SLOPE_ID_OFFSET
     }
 
-    flags2 |= tile.wireRed ? FLAG_2.IS_RED_WIRE : 0
-    flags2 |= tile.wireBlue ? FLAG_2.IS_BLUE_WIRE : 0
-    flags2 |= tile.wireGreen ? FLAG_2.IS_GREEN_WIRE : 0
-    flags3 |= tile.wireYellow ? FLAG_3.IS_YELLOW_WIRE : 0
-    flags3 |= tile.actuator ? FLAG_3.IS_ACTUATOR : 0
-    flags3 |= tile.actuated ? FLAG_3.IS_ACTUATED : 0
-    flags3 |= tile.blockColor ? FLAG_3.BLOCK_COLOR_ID : 0
-    flags3 |= tile.wallColor ? FLAG_3.WALL_COLOR_ID : 0
-    flags4 |= tile.invisibleBlock ? FLAG_4.IS_INVISIBLE_BLOCK : 0
-    flags4 |= tile.invisibleWall ? FLAG_4.IS_INVISIBLE_WALL : 0
-    flags4 |= tile.fullBrightBlock ? FLAG_4.IS_FULL_BRIGHT_BLOCK : 0
-    flags4 |= tile.fullBrightWall ? FLAG_4.IS_FULL_BRIGHT_WALL : 0
+    flags2 |= (tileFlags & TileFlag.WIRE_RED) ? FLAG_2.IS_RED_WIRE : 0
+    flags2 |= (tileFlags & TileFlag.WIRE_BLUE) ? FLAG_2.IS_BLUE_WIRE : 0
+    flags2 |= (tileFlags & TileFlag.WIRE_GREEN) ? FLAG_2.IS_GREEN_WIRE : 0
+    flags3 |= (tileFlags & TileFlag.WIRE_YELLOW) ? FLAG_3.IS_YELLOW_WIRE : 0
+    flags3 |= (tileFlags & TileFlag.ACTUATOR) ? FLAG_3.IS_ACTUATOR : 0
+    flags3 |= (tileFlags & TileFlag.ACTUATED) ? FLAG_3.IS_ACTUATED : 0
+    flags3 |= blockColor ? FLAG_3.BLOCK_COLOR_ID : 0
+    flags3 |= wallColor ? FLAG_3.WALL_COLOR_ID : 0
+    flags4 |= (tileFlags & TileFlag.INVISIBLE_BLOCK) ? FLAG_4.IS_INVISIBLE_BLOCK : 0
+    flags4 |= (tileFlags & TileFlag.INVISIBLE_WALL) ? FLAG_4.IS_INVISIBLE_WALL : 0
+    flags4 |= (tileFlags & TileFlag.FULL_BRIGHT_BLOCK) ? FLAG_4.IS_FULL_BRIGHT_BLOCK : 0
+    flags4 |= (tileFlags & TileFlag.FULL_BRIGHT_WALL) ? FLAG_4.IS_FULL_BRIGHT_WALL : 0
 
     if (flags4) {
       saver.saveUInt8(flags1 | FLAG_1.FLAG_2_EXISTS)
@@ -318,33 +309,33 @@ export default class WorldTilesIO implements Section.IODefinition<WorldTilesData
       saver.saveUInt8(flags1)
     }
 
-    if (flags1 & FLAG_1.BLOCK_ID_1) {
-      if (flags1 & FLAG_1.BLOCK_ID_2) {
-        saver.saveUInt16(tile.blockId!)
+    if (hasBlock) {
+      if (blockId > 255) {
+        saver.saveUInt16(blockId)
       } else {
-        saver.saveUInt8(tile.blockId!)
+        saver.saveUInt8(blockId)
       }
 
-      if (world.importants[tile.blockId!]) {
-        saver.saveInt16(tile.frameX!)
-        saver.saveInt16(tile.frameY!)
+      if (world.importants[blockId]) {
+        saver.saveInt16(tiles.frameX[i])
+        saver.saveInt16(tiles.frameY[i])
       }
 
-      if (flags3 & FLAG_3.BLOCK_COLOR_ID) {
-        saver.saveUInt8(tile.blockColor!)
-      }
-    }
-
-    if (flags1 & FLAG_1.WALL_ID_1) {
-      saver.saveUInt8(tile.wallId!)
-
-      if (flags3 & FLAG_3.WALL_COLOR_ID) {
-        saver.saveUInt8(tile.wallColor!)
+      if (blockColor) {
+        saver.saveUInt8(blockColor)
       }
     }
 
-    if (tile.liquidAmount) {
-      saver.saveUInt8(tile.liquidAmount)
+    if (wallId) {
+      saver.saveUInt8(wallId)
+
+      if (wallColor) {
+        saver.saveUInt8(wallColor)
+      }
+    }
+
+    if (liquidAmount) {
+      saver.saveUInt8(liquidAmount)
     }
 
     if (flags3 & FLAG_3.WALL_ID_2) {

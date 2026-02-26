@@ -35,6 +35,22 @@ export enum Slope {
   BL,
 }
 
+export const TileFlag = {
+  IS_BLOCK_ACTIVE: 1 << 0,
+  WIRE_RED: 1 << 1,
+  WIRE_BLUE: 1 << 2,
+  WIRE_GREEN: 1 << 3,
+  WIRE_YELLOW: 1 << 4,
+  ACTUATOR: 1 << 5,
+  ACTUATED: 1 << 6,
+  INVISIBLE_BLOCK: 1 << 7,
+  INVISIBLE_WALL: 1 << 8,
+  FULL_BRIGHT_BLOCK: 1 << 9,
+  FULL_BRIGHT_WALL: 1 << 10,
+  SLOPE_SHIFT: 11,
+  SLOPE_MASK: 0x7 << 11, // 3 bits for slope (values 0-5)
+} as const
+
 export enum Liquid {
   Water = 1,
   Lava,

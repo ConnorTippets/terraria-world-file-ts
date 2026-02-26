@@ -1,6 +1,7 @@
 export { default as FileReader } from './FileReader'
 export type { SelectedDataMap as WorldSections } from './FileReader'
 export { default as FileSaver } from './FileSaver'
+export { TileData } from './TileData'
 
 export * from './types'
 export type { FileFormatHeaderData as FileFormatHeader } from './section/FileFormatHeader'
