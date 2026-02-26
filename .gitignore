@@ -4,3 +4,5 @@
 /coverage
 *.tsbuildinfo
 /docs/README.md
+
+.claude/

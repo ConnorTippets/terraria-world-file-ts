@@ -172,14 +172,24 @@ export default class TileEntitiesIO implements Section.IODefinition<TileEntities
   }
 
   private parseHatRack(reader: BinaryReader, entity: TileEntityBase): HatRack {
-    const items = reader.readBits(8),
-      dyes = reader.readBits(8)
+    const numSlots = 2
+    const slots = reader.readBits(8)
+
+    const items: ItemSlot[] = []
+    for (let i = 0; i < numSlots; i++) {
+      items.push(slots[i] ? this.parseItem(reader) : null)
+    }
+
+    const dyes: ItemSlot[] = []
+    for (let i = 0; i < numSlots; i++) {
+      dyes.push(slots[i + numSlots] ? this.parseItem(reader) : null)
+    }
 
     return {
       ...entity,
       type: TileEntityType.HatRack,
-      items: items.map((bit): ItemSlot => (bit ? this.parseItem(reader) : null)),
-      dyes: dyes.map((bit): ItemSlot => (bit ? this.parseItem(reader) : null)),
+      items,
+      dyes,
     }
   }
 
@@ -253,12 +263,22 @@ export default class TileEntitiesIO implements Section.IODefinition<TileEntities
       case TileEntityType.DisplayDoll:
         this.saveDisplayDoll(saver, entity, world)
         break
-      case TileEntityType.HatRack:
-        saver.saveBits(entity.items.map((itemSlot) => itemSlot !== null))
-        saver.saveBits(entity.dyes.map((itemSlot) => itemSlot !== null))
-        saver.saveArray(entity.items, null, (itemSlot) => this.saveItem(saver, itemSlot))
-        saver.saveArray(entity.dyes, null, (itemSlot) => this.saveItem(saver, itemSlot))
+      case TileEntityType.HatRack: {
+        // Pack both item flags and dye flags into a single byte
+        // bits 0-1: item slots, bits 2-3: dye slots
+        const hatSlotBits = [
+          ...entity.items.map((s) => s !== null),
+          ...entity.dyes.map((s) => s !== null),
+        ]
+        saver.saveBits(hatSlotBits)
+        for (const itemSlot of entity.items) {
+          if (itemSlot !== null) this.saveItem(saver, itemSlot)
+        }
+        for (const dyeSlot of entity.dyes) {
+          if (dyeSlot !== null) this.saveItem(saver, dyeSlot)
+        }
         break
+      }
       case TileEntityType.DeadCellsDisplayJar:
         this.saveItem(saver, entity.item)
         break
