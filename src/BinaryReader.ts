@@ -12,6 +12,7 @@ export default class BinaryReader {
 
   private set offset(offset: number) {
     if (this.ignoreBounds && offset > this.view.byteLength) {
+      // @ts-ignore
       this.view = new DataView(this.view.buffer.transfer(this.view.byteLength + 4 * 1024 * 1024))
     }
 
