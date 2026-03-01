@@ -1,3 +1,4 @@
+// @ts-ignore
 import { Liquid, Slope, Tile, TileFlag } from './types'
 
 export class TileData {
