@@ -11,6 +11,7 @@ export default class BinarySaver {
 
   private set offset(offset: number) {
     if (offset + 10 > this.view.byteLength) {
+      // @ts-ignore
       this.view = new DataView(this.view.buffer.transfer(this.view.byteLength + 4 * 1024 * 1024))
     }
 
@@ -22,6 +23,7 @@ export default class BinarySaver {
   }
 
   public trimBuffer(): void {
+    // @ts-ignore
     this.view = new DataView(this.view.buffer.transfer(this.getPosition()))
   }
 
