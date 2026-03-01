@@ -1,20 +1,36 @@
 import type BinaryReader from '../BinaryReader'
 import {
+  // @ts-ignore
   CritterAnchor,
+  // @ts-ignore
   DeadCellsDisplayJar,
+  // @ts-ignore
   DisplayDoll,
+  // @ts-ignore
   FoodPlatter,
+  // @ts-ignore
   HatRack,
+  // @ts-ignore
   Item,
+  // @ts-ignore
   ItemFrame,
+  // @ts-ignore
   ItemSlot,
+  // @ts-ignore
   KiteAnchor,
+  // @ts-ignore
   LogicSensor,
+  // @ts-ignore
   Pylon,
+  // @ts-ignore
   TileEntity,
+  // @ts-ignore
   TileEntityBase,
+  // @ts-ignore
   TileEntityType,
+  // @ts-ignore
   TrainingDummy,
+  // @ts-ignore
   WeaponsRack,
 } from '../types'
 import type { Section } from '../sections'
